@@ -1,1 +1,1 @@
-# campsite-reservation-api
+# API for campsite reservation
