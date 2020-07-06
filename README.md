@@ -2,4 +2,4 @@
 
 Current limitations:
 <br>
-* Anybody can modify a reservation
+* Anybody can modify a reservation with only the id
