@@ -1,3 +1,5 @@
 # API for campsite reservation
 
-Test
+Current limitations:
+<br>
+* Anybody can modify a reservation
