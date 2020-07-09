@@ -100,9 +100,9 @@ class CampsiteReservationApplicationTests {
 		
 		if(creationResponse.getStatusCode().is2xxSuccessful()) {
 			Reservation created = objectMapper.convertValue(creationResponse.getBody(), Reservation.class);
-			log.info("Reservation saved with identifier: " + created.getId());
+			log.info("Reservation saved with identifier: {}", created.getId());
 			
-			log.info("Reservation {} will be deleted." + created.getId());
+			log.info("Reservation {} will be deleted.", created.getId());
 			
 			this.restTemplate.delete(host + port + "/reservation/" + created.getId());
 			
