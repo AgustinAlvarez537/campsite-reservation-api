@@ -14,7 +14,7 @@ import javax.validation.Payload;
 @Retention(RetentionPolicy.RUNTIME)
 @Constraint(validatedBy = { ValidReservationDateIntervalValidator.class })
 public @interface ValidReservationDateInterval {
-	String message() default "Invalid dates selected (must be 1 day ahead of arrival and up to 1 month in advance)";
+	String message() default "Invalid dates selected (must be 1 day ahead of arrival and up to 1 month in advance, also check-out date must be lower or equals than departure date)";
 	Class<?>[] groups() default { };
 	Class<? extends Payload>[] payload() default { };
 }

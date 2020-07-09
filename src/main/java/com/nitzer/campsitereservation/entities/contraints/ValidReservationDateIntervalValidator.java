@@ -16,11 +16,8 @@ public class ValidReservationDateIntervalValidator
 			return true;
 		}
 
-		LocalDate today = LocalDate.now();
-		LocalDate todayPlus1Month = LocalDate.now().plusMonths(1);
-
-		return today.isBefore(value.getCheckInDate()) && value.getArrivalDate().isBefore(value.getCheckInDate())
-				&& value.getCheckInDate().isBefore(todayPlus1Month);
+		return value.getArrivalDate().isBefore(value.getCheckInDate())
+				&& value.getCheckInDate().isBefore(LocalDate.now().plusMonths(1));
 	}
 
 }
