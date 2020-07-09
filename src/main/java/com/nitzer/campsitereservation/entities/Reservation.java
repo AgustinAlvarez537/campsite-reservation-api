@@ -1,17 +1,18 @@
 package com.nitzer.campsitereservation.entities;
 
 import java.time.LocalDate;
+import java.util.UUID;
 
 import javax.persistence.Column;
 import javax.persistence.Entity;
 import javax.persistence.GeneratedValue;
-import javax.persistence.GenerationType;
 import javax.persistence.Id;
 import javax.persistence.Table;
 import javax.validation.constraints.Email;
 import javax.validation.constraints.NotEmpty;
 import javax.validation.constraints.NotNull;
 
+import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.validator.constraints.Length;
 
 import com.nitzer.campsitereservation.entities.contraints.ValidReservationDateInterval;
@@ -27,15 +28,24 @@ import lombok.Data;
 public class Reservation {
 	
 	@Id
-	@GeneratedValue(strategy = GenerationType.IDENTITY)
-	private Long id;
+	@GeneratedValue(generator = "UUID")
+	@GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+	private UUID id;
+	
+	@Column(name="check_in_date")
+	@NotNull(message = "You must specify a reservation start date")
+	private LocalDate checkInDate;
+
+	@Column(name="check_out_date")
+	@NotNull(message = "You must specify a reservation end date")
+	private LocalDate checkOutDate;
 	
 	@Column(name = "arrival_date")
-	@NotNull(message = "You muse specify an arrival date")
+	@NotNull(message = "You must specify an arrival date")
 	private LocalDate arrivalDate;
 
 	@Column(name = "departure_date")
-	@NotNull(message = "You muse specify a departure date")
+	@NotNull(message = "You must specify a departure date")
 	private LocalDate departureDate;
 	
 	@NotEmpty(message = "You must specify an email")
@@ -47,4 +57,5 @@ public class Reservation {
 	@NotEmpty(message="You must enter your full name")
 	@Length(max=100)
 	private String fullName;
+	
 }

@@ -1,5 +1,7 @@
 package com.nitzer.campsitereservation.exceptions;
 
+import java.util.UUID;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;
 
@@ -8,7 +10,7 @@ public class ReservationNotFoundException extends RuntimeException{
 
     private static final long serialVersionUID = 1L;
 
-    public ReservationNotFoundException(Long id){
+    public ReservationNotFoundException(UUID id){
         super(String.format("Reservation with id %s not found",id));
     }
 }

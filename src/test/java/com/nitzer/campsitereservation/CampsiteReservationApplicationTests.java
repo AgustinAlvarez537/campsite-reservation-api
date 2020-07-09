@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -38,6 +39,8 @@ import lombok.extern.slf4j.Slf4j;
 @TestMethodOrder(OrderAnnotation.class)
 class CampsiteReservationApplicationTests {
 	
+	private LocalDate today = LocalDate.now();
+	
 	private String host = "http://localhost:";
 	
 	@LocalServerPort
@@ -49,15 +52,21 @@ class CampsiteReservationApplicationTests {
 	@Autowired
 	private ReservationRepository repository;
 
-    private static final int THREAD_COUNT = 1000;
+    private static final int THREAD_COUNT = 10;
 
-    private final Object threadLock = new Object();
+    private final Object reserverThreadLock = new Object();
+    
+    private final Object checkerThreadLock = new Object();
 
-    private volatile int threadReadyCount = 0;
+    private volatile int reserverThreadReadyCount = 0;
+    
+    private volatile int checkerThreadReadyCount = 0;
     
     private volatile int conflictReservation = 0;
     
     private volatile int errorReservation = 0;
+    
+    private volatile int errorChecking = 0;
 	
     @Autowired
     protected ObjectMapper objectMapper;
@@ -78,15 +87,23 @@ class CampsiteReservationApplicationTests {
 	@Test
 	@Order(3)
 	public void reserveAndCancel() throws Exception {
+		
 		Reservation reservation = new Reservation();
-		reservation.setArrivalDate(LocalDate.now().plusDays(1));
-		reservation.setDepartureDate(LocalDate.now().plusDays(3));
+		reservation.setArrivalDate(today);
+		reservation.setDepartureDate(today.plusDays(3));
+		reservation.setCheckInDate(today.plusDays(1));
+		reservation.setCheckOutDate(today.plusDays(3));
 		reservation.setEmail("test@test.com");
 		reservation.setFullName("Test 1");
+		
 		ResponseEntity<Object> creationResponse = this.restTemplate.postForEntity("http://localhost:" + port + "/reservation", reservation, Object.class );
 		
 		if(creationResponse.getStatusCode().is2xxSuccessful()) {
 			Reservation created = objectMapper.convertValue(creationResponse.getBody(), Reservation.class);
+			log.info("Reservation saved with identifier: " + created.getId());
+			
+			log.info("Reservation {} will be deleted." + created.getId());
+			
 			this.restTemplate.delete(host + port + "/reservation/" + created.getId());
 			
 			Optional<Reservation> existsReservation = this.repository.findById(created.getId());
@@ -103,15 +120,14 @@ class CampsiteReservationApplicationTests {
 	@Order(4)
 	public void invalidDates() throws Exception {
 		Reservation reservation = new Reservation();
-		reservation.setArrivalDate(LocalDate.now().plusDays(-1));
-		reservation.setDepartureDate(LocalDate.now());
 		reservation.setEmail("test@test.com");
 		reservation.setFullName("Test 1");
+		reservation.setArrivalDate(today);
+		reservation.setDepartureDate(today.plusDays(3));
+		reservation.setCheckInDate(today.plusDays(-1));
+		reservation.setCheckOutDate(today);
 		ResponseEntity<Object> creationResponse = this.restTemplate.postForEntity("http://localhost:" + port + "/reservation", reservation, Object.class );
 
-		
-		log.info("Reservation result: {}",creationResponse);
-		
 		assertTrue(creationResponse.getStatusCode().is4xxClientError());
 	}
 	
@@ -119,8 +135,10 @@ class CampsiteReservationApplicationTests {
 	@Order(5)
 	public void reserveAndModify() throws Exception {
 		Reservation reservation = new Reservation();
-		reservation.setArrivalDate(LocalDate.now().plusDays(1));
-		reservation.setDepartureDate(LocalDate.now().plusDays(3));
+		reservation.setArrivalDate(today.plusDays(1));
+		reservation.setDepartureDate(today.plusDays(3));
+		reservation.setCheckInDate(today.plusDays(2));
+		reservation.setCheckOutDate(today.plusDays(3));
 		reservation.setEmail("test@test.com");
 		reservation.setFullName("Test 1");
 		
@@ -128,9 +146,12 @@ class CampsiteReservationApplicationTests {
 		
 		if(creationResponse.getStatusCode().is2xxSuccessful()) {
 			Reservation toUpdate = objectMapper.convertValue(creationResponse.getBody(), Reservation.class);
-			LocalDate newArrivalDate = LocalDate.now().plusDays(2);
+			log.info("Reservation saved with identifier: " + toUpdate.getId());
 			
-			toUpdate.setArrivalDate(newArrivalDate);
+			
+			LocalDate newCheckInDate = today.plusDays(2);
+			
+			toUpdate.setCheckInDate(newCheckInDate);
 
 		    HttpHeaders headers = new HttpHeaders();
 		    headers.setContentType(MediaType.APPLICATION_JSON); 
@@ -140,7 +161,7 @@ class CampsiteReservationApplicationTests {
 			ResponseEntity<Object> updateResponse = this.restTemplate.exchange(host + port + "/reservation/" + toUpdate.getId(),HttpMethod.PUT,entity,Object.class);
 			if(updateResponse.getStatusCode().is2xxSuccessful()) {
 				Reservation updated = objectMapper.convertValue(updateResponse.getBody(), Reservation.class);
-				assertEquals(updated.getArrivalDate(),newArrivalDate);
+				assertEquals(updated.getCheckInDate(),newCheckInDate);
 			}else {
 				log.info("Error updating reservation: {}",updateResponse.getBody());
 				fail();
@@ -157,7 +178,7 @@ class CampsiteReservationApplicationTests {
 	public void generateReservationsConcurrently() throws Exception {
 		// Create threads
         var threadList = IntStream.range(0, THREAD_COUNT)
-                .mapToObj(i -> new Thread(() -> testThread(i)))
+                .mapToObj(i -> new Thread(() -> testReserverThread(i)))
                 .collect(Collectors.toList());
         
         threadList.forEach(Thread::start);
@@ -165,11 +186,11 @@ class CampsiteReservationApplicationTests {
         // Wait for threads to be ready
         do {
             threadSleep(100);
-        } while (threadReadyCount < THREAD_COUNT);
+        } while (reserverThreadReadyCount < THREAD_COUNT);
 
         // Start test
-        synchronized (threadLock) {
-            threadLock.notifyAll();
+        synchronized (reserverThreadLock) {
+            reserverThreadLock.notifyAll();
         }
 
         // Join threads
@@ -177,56 +198,128 @@ class CampsiteReservationApplicationTests {
             thread.join();
         }
         
-		assertEquals(conflictReservation, (THREAD_COUNT-1));
+		assertTrue(conflictReservation ==  (THREAD_COUNT-1) && errorReservation == 0);
 	}
 	
-    private Reservation generateRandomReservation(int i) {
+	private Reservation generateRandomReservation(int i) {
     	Reservation b = new Reservation();
     	b.setEmail(String.format("test%s@gmail.com",i));
     	b.setFullName(String.format("Thready %s", i));
-    	b.setArrivalDate(LocalDate.now().plusDays(4));
-    	b.setDepartureDate(LocalDate.now().plusDays(5));
+    	b.setCheckInDate(today.plusDays(5));
+    	b.setCheckOutDate(today.plusDays(6));
+    	b.setArrivalDate(today.plusDays(4));
+    	b.setDepartureDate(today.plusDays(6));
     	return b;
     }
 	
-	private void testThread(int i) {
-        log.info("Thread {} started", i);
-        threadWait();
-        log.info("Thread {} will save a reservation", i);
+	private void testReserverThread(int i) {
+        log.info("Reserver Thread {} started", i);
+        reserverThreadWait();
+        log.info("Reserver Thread {} will save a reservation", i);
         ResponseEntity<Object> creationResponse = this.restTemplate.postForEntity(host + port + "/reservation", generateRandomReservation(i),Object.class);
         	
     	if(creationResponse.getStatusCode().is2xxSuccessful()) {
     		Reservation created = objectMapper.convertValue(creationResponse.getBody(), Reservation.class);
-        	log.info("Thread {} make his reservation. Id: {}",i,created.getId());
+        	log.info("Reserver Thread {} make his reservation. Id: {}",i,created.getId());
     	}else {
     		LinkedHashMap<?,?> response = (LinkedHashMap<?,?>) creationResponse.getBody();
     		if(creationResponse.getStatusCode().is4xxClientError()) {
-	    		synchronized(threadLock) {
+	    		synchronized(reserverThreadLock) {
 	    			conflictReservation++;
 	    		}
-	        	log.info("Thread {} had a client error making his reservation. Error: {}", i,response.get("errors"));
+	        	log.info("Reserver Thread {} had a client error making his reservation. Error: {}", i,response.get("errors"));
 	    	}else {
-	    		synchronized(threadLock) {
+	    		synchronized(reserverThreadLock) {
 	    			errorReservation++;
 	    		}
-	        	log.info("Thread {} had a server error making his reservation. Error: {}", i,response.get("errors"));
+	        	log.info("Reserver Thread {} had a server error making his reservation. Error: {}", i,response.get("errors"));
 	    	}
     	}
     	
         threadSleep(100);
-        log.info("Thread {} stopping", i);
+        log.info("Reserver Thread {} stopping", i);
     }
+	
+	@SneakyThrows(InterruptedException.class)
+    private void reserverThreadWait() {
+        synchronized (reserverThreadLock) {
+            reserverThreadReadyCount++;
+            reserverThreadLock.wait();
+        }
+    }
+	
+	@Test
+	@Order(7)
+	public void checkAvaibilityConcurrently() throws Exception {
+		// Create threads
+        var threadList = IntStream.range(0, THREAD_COUNT)
+                .mapToObj(i -> new Thread(() -> testCheckerThread(i)))
+                .collect(Collectors.toList());
+        
+        threadList.forEach(Thread::start);
+
+        // Wait for threads to be ready
+        do {
+            threadSleep(100);
+        } while (checkerThreadReadyCount < THREAD_COUNT);
+        
+        // Start test
+        synchronized (checkerThreadLock) {
+            checkerThreadLock.notifyAll();
+        }
+
+        // Join threads
+        for (Thread thread : threadList) {
+            thread.join();
+        }
+        
+		assertTrue(errorChecking == 0);
+	}
+	
+	private void testCheckerThread(int i) {
+        log.info("Checker Thread {} started", i);
+        checkerThreadWait();
+        log.info("Checker Thread {} will check availability", i);
+        try {
+	        ResponseEntity<Object> checkAvailabilityResponse = this.restTemplate.getForEntity(host + port + "/reservation/available",Object.class);
+	        	
+	    	if(checkAvailabilityResponse.getStatusCode().is2xxSuccessful()) {
+	    		List<?> created = objectMapper.convertValue(checkAvailabilityResponse.getBody(), List.class);
+	        	log.info("Checker Thread {} checked availability. Dates: {}",i,created.toString());
+	    	}else {
+	    		LinkedHashMap<?,?> response = (LinkedHashMap<?,?>) checkAvailabilityResponse.getBody();
+	    		synchronized(checkerThreadLock) {
+	    			errorChecking++;
+	    		}
+	        	log.info("Checker Thread {} had a server error checking availability. Error: {}", i,response.get("errors"));
+		    	
+	    	}
+        }catch(Exception e) {
+        	synchronized(checkerThreadLock) {
+    			errorChecking++;
+    		}
+        	log.info("Check Thread {} had a server error checking availability. Error: {}", i,e.getMessage());
+	    	
+        }
+    	
+        threadSleep(100);
+        log.info("Checker Thread {} stopping", i);
+    }
+	
+	 @SneakyThrows(InterruptedException.class)
+	    private void checkerThreadWait() {
+	        synchronized (checkerThreadLock) {
+	            checkerThreadReadyCount++;
+	            checkerThreadLock.wait();
+	        }
+	    }
+    
 	
     @SneakyThrows(InterruptedException.class)
     private void threadSleep(int duration) {
         Thread.sleep(duration);
     }
     
-    @SneakyThrows(InterruptedException.class)
-    private void threadWait() {
-        synchronized (threadLock) {
-            threadReadyCount++;
-            threadLock.wait();
-        }
-    }
+    
+
 }

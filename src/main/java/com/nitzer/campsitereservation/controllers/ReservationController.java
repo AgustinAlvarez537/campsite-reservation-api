@@ -4,6 +4,7 @@ import java.net.URI;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import javax.validation.Valid;
 
@@ -114,7 +115,7 @@ public class ReservationController {
 	  @ApiResponse(responseCode = "409", description = "Another reservation exists in the date interval",
 	    content = @Content)})
 	@PutMapping("/reservation/{id}")
-	public ResponseEntity<Reservation> updateBooking(@Valid @RequestBody Reservation booking, @Parameter(description = "Reservation identifier") @PathVariable Long id) throws RuntimeException {
+	public ResponseEntity<Reservation> updateBooking(@Valid @RequestBody Reservation booking, @Parameter(description = "Reservation identifier") @PathVariable UUID id) throws RuntimeException {
 		return ResponseEntity.ok(this.service.update(booking,id));
 	}
 	
@@ -130,7 +131,7 @@ public class ReservationController {
 	  @ApiResponse(responseCode = "409", description = "Not apply",
 	    content = @Content)})
 	@DeleteMapping("/reservation/{id}")
-	public ResponseEntity<Void> cancel(@Parameter(description = "Reservation identifier") @PathVariable Long id) throws RuntimeException {
+	public ResponseEntity<Void> cancel(@Parameter(description = "Reservation identifier") @PathVariable UUID id) throws RuntimeException {
 		this.service.cancel(id);
 		
 		return ResponseEntity.ok().build();

@@ -13,11 +13,11 @@ public class ValidReservationLengthValidator implements ConstraintValidator<Vali
 	
 	@Override
 	public boolean isValid(Reservation value, ConstraintValidatorContext context) {
-		if(value == null || value.getArrivalDate() == null || value.getDepartureDate() == null) {
+		if(value == null || value.getCheckInDate() == null || value.getCheckOutDate() == null) {
 			return true;
 		}
 
-		return ChronoUnit.DAYS.between(value.getArrivalDate(),value.getDepartureDate()) <= MAX_LENGTH;
+		return ChronoUnit.DAYS.between(value.getCheckInDate(),value.getCheckOutDate()) <= MAX_LENGTH;
 	}
 
 }
